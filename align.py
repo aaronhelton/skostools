@@ -123,6 +123,8 @@ if __name__ == '__main__':
 
 
   out_graph = Graph()
+  nsm = NamespaceManager(out_graph)
+  nsm.bind('owl', OWL, override=False)
   
   print("Count of matches: " + str(len(match_ids)))
 
