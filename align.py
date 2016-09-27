@@ -47,6 +47,9 @@ if __name__ == '__main__':
   unmatched = []
   unmatched_deletions = []
 
+  # set the minimum score, which is the integer count of matching labels
+  min_score = 2
+
   print("Making dictionaries")
   for s,o in left_graph.subject_objects(predicate=SKOS.prefLabel):
     if o.value.isupper():
@@ -125,14 +128,18 @@ if __name__ == '__main__':
 
   for i in match_ids:
     osa = owl_sameas[i]
-    f = Resource(out_graph, URIRef(osa['left']))
-    r = Resource(out_graph, URIRef(osa['right']))
-    f.add(OWL.sameAs, r)
-    r.add(OWL.sameAs, f)
+    if osa['score'] >= min_score:
+      f = Resource(out_graph, URIRef(osa['left']))
+      r = Resource(out_graph, URIRef(osa['right']))
+      f.add(OWL.sameAs, r)
+      r.add(OWL.sameAs, f)
+    else:
+      # The match was excluded by score
+      print("Excluding " + str(osa) + " because the score was too low.")
 
   out_graph.serialize(outfile,format=left_format)
   if len(unmatched) > 0:
-    if unmatched_deletions > 0:
+    if len(unmatched_deletions) > 0:
       unmatched = list(set(unmatched) - set(unmatched_deletions)) 
     for u in unmatched:
       print(u + " matched nothing in the target set.")
