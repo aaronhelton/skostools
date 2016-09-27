@@ -18,12 +18,15 @@ from rdflib.resource import Resource
 from rdflib.namespace import SKOS, NamespaceManager
 from rdflib.util import guess_format
 import hashlib
+import logging
 
 if __name__ == '__main__':
   arguments = docopt(__doc__,version='SKOS2XL 1.0')
   leftfile = arguments['--left']
   rightfile = arguments['--right']
   outfile = arguments['--outfile']
+
+  logging.basicConfig(filename='align.log',level=logging.DEBUG)
 
   left_graph = Graph()
   right_graph = Graph()
@@ -41,31 +44,51 @@ if __name__ == '__main__':
   right_labels = {}
   owl_sameas = {}
   match_ids = []
+  unmatched = []
+  unmatched_deletions = []
 
   print("Making dictionaries")
   for s,o in left_graph.subject_objects(predicate=SKOS.prefLabel):
-    label_key = o.value + '_' + o.language
+    if o.value.isupper():
+      label_key = o.value + '_' + o.language.upper()
+    elif o.value.islower():
+      label_key = o.value + '_' + o.language.lower()
+    else:
+      label_key = o.value + '_' + o.language
+
+    logging.debug("Adding " + label_key + " to left_labels with URI " + str(s))
     left_labels[label_key] = str(s)
 
   for s,o in right_graph.subject_objects(predicate=SKOS.prefLabel):
-    label_key = o.value + '_' + o.language
+    if o.value.isupper():
+      label_key = o.value + '_' + o.language.upper()
+    elif o.value.islower():
+      label_key = o.value + '_' + o.language.lower()
+    else:
+      label_key = o.value + '_' + o.language
+
+    logging.debug("Adding " + label_key + " to right_labels with URI " + str(s))
     right_labels[label_key] = str(s)
 
   print("Searching labels")
   for key in left_labels:
     right_match = None
     # straight comparison
+    logging.debug("Does right_labels have " + key + "?")
     try:
       right_match = right_labels[key]
     except KeyError:
+      logging.debug("No. What about " + key.upper() + "?")
       #upcase left
       try:
         right_match = right_labels[key.upper()]
       except KeyError:
+        logging.debug("No. What about " + key.lower() + "?")
         #downcase left
         try:
           right_match = right_labels[key.lower()]
         except KeyError:
+          logging.debug("Can't find " + key + " in right_labels under any circumstance. Passing.")
           # stop here; nothing seems to match, so likely there is no match from left to right?
           pass
  
@@ -75,6 +98,7 @@ if __name__ == '__main__':
       # score to weed out near matches so we can promote those that match across all translations
       match_id = hashlib.md5(right_match.encode('utf-8') + left_labels[key].encode('utf-8')).hexdigest()
       match_ids.append(match_id)
+      logging.debug(match_id)
       try:
         osa = owl_sameas[match_id]
       except KeyError:
@@ -85,6 +109,15 @@ if __name__ == '__main__':
         }
       finally:
         owl_sameas[match_id]['score'] += 1
+        # because something eventually matched here, we can mark the item as to be deleted from unmatched
+        if left_labels[key] not in unmatched_deletions:
+          unmatched_deletions.append(left_labels[key])
+        logging.debug(owl_sameas[match_id])
+    else:
+      # we want a way to catalog things that end up without any kind of match. Let's start here.
+      if left_labels[key] not in unmatched:
+        unmatched.append(left_labels[key])
+
 
   out_graph = Graph()
   
@@ -98,3 +131,8 @@ if __name__ == '__main__':
     r.add(OWL.sameAs, f)
 
   out_graph.serialize(outfile,format=left_format)
+  if len(unmatched) > 0:
+    if unmatched_deletions > 0:
+      unmatched = list(set(unmatched) - set(unmatched_deletions)) 
+    for u in unmatched:
+      print(u + " matched nothing in the target set.")
